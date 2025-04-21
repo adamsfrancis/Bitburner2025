@@ -1,0 +1,5 @@
+node_modules/
+dist/
+NetscriptDefinitions.d.ts
+*.code-workspace
+src/archive/
