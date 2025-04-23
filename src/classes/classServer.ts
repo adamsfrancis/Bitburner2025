@@ -55,14 +55,38 @@ export class serverObject{
             this.ramAvailable = data.maxRam-data.ramUsed;
             this.parentServer = parentServer;
             this.filesAvailable = ns.ls(data.hostname);      
+            this.serverType = this.determineServerType(ns, data);
+            this.isUsable = this.isServerUsable(data);
     }
+
+    private isServerUsable(data: Server): boolean {
+        return (
+            data.hasAdminRights ||
+            data.hostname === "home" ||
+            data.purchasedByPlayer
+        );
+    }
+
+    private determineServerType(ns: NS, data: Server): string {
+        if (data.hostname === "home") return "home";
+        if (data.purchasedByPlayer) return "playerOwned";
+        if (
+            !data.hasAdminRights ||
+            data.requiredHackingSkill! > ns.getHackingLevel() ||
+            data.moneyMax === 0
+        ) {
+            return "non-Attackable";
+        }
+        return "targetServer";
+    }
+
     public isPrepped(){
-        return (this.hackDifficulty === this.minDifficulty && this.moneyAvailable === this.moneyMax);
+        return (this.hackDifficulty > this.minDifficulty && this.moneyAvailable < this.moneyMax);
     }
     public needsGrow(){
-        return (this.moneyAvailable !== this.moneyMax);
+        return (this.moneyAvailable < this.moneyMax);
     }
     public needsWeaken(){
-        return (this.hackDifficulty !== this.minDifficulty);
+        return (this.hackDifficulty > this.minDifficulty);
     }
 }
