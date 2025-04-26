@@ -1,9 +1,7 @@
 // scoutMan.js
 import { NS } from "@ns";
-import { serverConstants } from "/libraries/constants";
 import { serverObject } from "/classes/classServer";
-
-const outputFile = "/managers/evolvingMan/shared/scout-targets.txt";
+import { evolvingManFiles } from "/libraries/constants";
 
 
 
@@ -40,7 +38,7 @@ export async function getAllServerInfo(ns: NS, serverMap: Map<string, string | u
     );
 }
 
-export async function main(ns:NS) {
+export async function main(ns:NS):Promise<void> {
     ns.disableLog("ALL");
 
 
@@ -51,6 +49,6 @@ export async function main(ns:NS) {
     // Get all initial server information.
     const filledServerMap = await getAllServerInfo(ns,initialServerMap);
 
-    // Dump it in a file.
-    await ns.write(outputFile, JSON.stringify(filledServerMap, null, 2), "w");
+    await ns.write(evolvingManFiles.scoutingReport,JSON.stringify(filledServerMap),"w")
+
 }

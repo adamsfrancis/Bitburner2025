@@ -15,8 +15,8 @@ export async function main(ns: NS) {
     }
 
     // Pass the sleep time as additionalMsec in the options
-    const weakenOptions = { additionalMsec: Math.max(0, additionalDelay), stock, threads };
+    const hackoptions = { additionalMsec: Math.max(0, additionalDelay), stock, threads };
 
     // Perform the weaken action with the specified options
-    await ns.hack(targetServer, weakenOptions);
+    await ns.hack(targetServer, hackoptions);
 }

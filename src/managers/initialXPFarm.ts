@@ -20,64 +20,110 @@ export async function main(ns: NS): Promise<void> {
     // Get all owned servers
     const allServers = ns.getPurchasedServers();
     allServers.push("home"); // Include home in the server list
+    await scpNeededFiles(ns,allServers)
 
-    // --- PHASE 1: Prep target with GW batches ---
+    // --- PHASE 1: Prep target with W first, then GW batches ---
     while (true) {
+        await scpNeededFiles(ns,allServers)
         const secDiff = ns.getServerSecurityLevel(target) - ns.getServerMinSecurityLevel(target);
         const moneyLow = ns.getServerMoneyAvailable(target) < ns.getServerMaxMoney(target);
-        if (!moneyLow && secDiff <= 0.1) break;
 
-        const rawAvailableRam = ns.getServerMaxRam("home") - ns.getServerUsedRam("home");
-        const availableRam = rawAvailableRam * 0.95;
+        // First: If security is too high, focus only on weaken
+        if (secDiff > 0.1) {
+            for (const server of allServers) {
+                let availableRam = ns.getServerMaxRam(server) - ns.getServerUsedRam(server);
 
-        // GW ratio: 12.5 grow threads => 1 weaken thread
-        // Total RAM per grow+weaken "unit"
-        const unitGrow = 1;
-        const unitWeaken = unitGrow * 0.004 / 0.05; // 12.5 weaken units per grow to counteract sec
-        const ramPerUnit = (unitGrow * ramG) + (unitWeaken * ramW);
+                const maxWeakenThreads = Math.floor(availableRam / ramW);
+                if (maxWeakenThreads <= 0) continue;
 
-        const units = Math.floor(availableRam / ramPerUnit);
-        const growThreads = Math.max(1, Math.floor(units * unitGrow));
-        const weakenThreads = Math.ceil(units * unitWeaken);
+                const wPid = ns.exec(weakenScript, server, maxWeakenThreads, target, 0, false);
+                if (wPid === 0) {
+                    ns.tprint(`⚠️ Failed to launch weaken on ${server} with ${maxWeakenThreads} threads. Free RAM: ${ns.formatRam(availableRam)} | Weaken RAM: ${ns.formatRam(ramW)}`);
+                }
+            }
 
-        const totalRamNeeded = growThreads * ramG + weakenThreads * ramW;
-        if (totalRamNeeded > availableRam) {
-            await ns.sleep(100); // Wait for RAM to free up
-            continue;
+            const waitTime = ns.getWeakenTime(target);
+            await showProgress(ns, `[Phase 1 - Weakening] SecDiff: ${secDiff.toFixed(2)}`, waitTime);
+            continue; // Always recheck security after weaken phase
         }
 
-        const gPid = ns.exec(growScript, "home", growThreads, target, 0, false);
-        const wPid = ns.exec(weakenScript, "home", weakenThreads, target, 0, false);
+        // Second: Security is fine, but money is low -> do GW batch
+        if (moneyLow) {
+            for (const server of allServers) {
+                let availableRam = ns.getServerMaxRam(server) - ns.getServerUsedRam(server);
 
-        if (gPid === 0 || wPid === 0) {
-            ns.tprint(`⚠️ Failed to launch GW batch. G:${gPid} W:${wPid} | RAM: ${ns.formatRam(totalRamNeeded)} / ${ns.formatRam(availableRam)}`);
+                // Try to launch a GW batch, scale down if necessary
+                const unitGrow = 1;
+                const unitWeaken = unitGrow * 0.004 / 0.05; // 12.5 ratio
+                const ramPerUnit = (unitGrow * ramG) + (unitWeaken * ramW);
+
+                let units = Math.floor(availableRam / ramPerUnit);
+                if (units < 1) continue;
+
+                let growThreads = Math.max(1, Math.floor(units * unitGrow));
+                let weakenThreads = Math.ceil(units * unitWeaken);
+
+                let totalRamNeeded = (growThreads * ramG) + (weakenThreads * ramW);
+
+                // If we don't fit, scale down by 90% each attempt
+                while (totalRamNeeded > availableRam) {
+                    units = Math.floor(units * 0.9);
+                    growThreads = Math.max(1, Math.floor(units * unitGrow));
+                    weakenThreads = Math.ceil(units * unitWeaken);
+                    totalRamNeeded = (growThreads * ramG) + (weakenThreads * ramW);
+                    if (units < 1) break;
+                }
+
+                if (totalRamNeeded <= availableRam) {
+                    const gPid = ns.exec(growScript, server, growThreads, target, 0, false);
+                    const wPid = ns.exec(weakenScript, server, weakenThreads, target, 0, false);
+
+                    if (gPid === 0 || wPid === 0) {
+                        ns.tprint(`⚠️ Failed to launch GW batch on ${server}. G:${gPid} W:${wPid} | RAM: ${ns.formatRam(totalRamNeeded)} / ${ns.formatRam(availableRam)}`);
+                    }
+                }
+            }
+
+            const waitTime = Math.max(ns.getGrowTime(target), ns.getWeakenTime(target));
+            const moneyPct = (ns.getServerMoneyAvailable(target) / ns.getServerMaxMoney(target)) * 100;
+            await showProgress(
+                ns,
+                `[Phase 1 - Growing] $: ${moneyPct.toFixed(1)}%`,
+                waitTime
+            );
+            continue; // Loop and recheck after grow batches
         }
 
-        const waitTime = Math.max(ns.getGrowTime(target), ns.getWeakenTime(target));
-        const moneyPct = (ns.getServerMoneyAvailable(target) / ns.getServerMaxMoney(target)) * 100;
-        await showProgress(
-            ns,
-            `[Phase 1 - GW Batch] G:${growThreads} W:${weakenThreads} | $: ${moneyPct.toFixed(1)}%`,
-            waitTime
-        );
+        // Third: If no secDiff and money full, target is fully prepped
+        break;
     }
 
-    ns.tprint(`✅ ${target} prepped. Farming XP until hacking level >= ${stopAtLevel || "infinity"}...`);
+    ns.tprint(`✅ ${target} fully prepped. Moving to XP farm...`);
+
 
     // --- PHASE 2: XP farming with grow ---
+    await scpNeededFiles(ns,allServers)
     let lastGrowTime = 0;
     while (stopAtLevel === null || ns.getHackingLevel() < stopAtLevel) {
-        // Iterate over all servers and utilize available RAM for grow script
-        for (const server of allServers) {
-            const freeRam = ns.getServerMaxRam(server) - ns.getServerUsedRam(server);
-            const threads = Math.floor(freeRam / ramG);
-            if (threads > 0) {
-                const time = ns.getGrowTime(target);
-                const pid = ns.exec(growScript, server, threads, target, 0, false);
-                if (pid === 0) {
-                    ns.tprint(`⚠️ Failed to launch grow XP farm on ${server} with ${threads} threads.`);
+        // Get available RAM across all servers
+        const totalRam = allServers.reduce((total, server) => total + ns.getServerMaxRam(server) - ns.getServerUsedRam(server), 0);
+
+        // Use all available RAM for grow script
+        let growThreads = Math.floor(totalRam / ramG);
+        if (growThreads > 0) {
+            const time = ns.getGrowTime(target);
+            for (const server of allServers) {
+                const freeRam = ns.getServerMaxRam(server) - ns.getServerUsedRam(server);
+                const threads = Math.min(growThreads, Math.floor(freeRam / ramG));
+
+                if (threads > 0) {
+                    const pid = ns.exec(growScript, server, threads, target, 0, false);
+                    if (pid === 0) {
+                        ns.tprint(`⚠️ Failed to launch grow XP farm on ${server} with ${threads} threads.`);
+                    }
+                    growThreads -= threads;
+                    lastGrowTime = time;
                 }
-                lastGrowTime = time;
             }
         }
 
@@ -92,6 +138,7 @@ export async function main(ns: NS): Promise<void> {
     await showProgress(ns, "[Phase 2 - Final Grow]", lastGrowTime);
 
     // --- PHASE 3: Launch main daemon if level is specified ---
+    await scpNeededFiles(ns,allServers)
     if (stopAtLevel !== null && !ns.isRunning(daemonScript)) {
         ns.run(daemonScript, 1);
         ns.tprint("🚀 Daemon started.");
@@ -118,4 +165,11 @@ function generateProgressBar(percent: number): string {
     const filledLength = Math.floor((percent / 100) * barLength);
     const emptyLength = barLength - filledLength;
     return `[${'█'.repeat(filledLength)}${' '.repeat(emptyLength)}] ${percent.toFixed(0)}%`;
+}
+
+async function scpNeededFiles(ns:NS,serverList:string[]){
+    for(const server of serverList){
+        await ns.scp(growScript,server);
+        await ns.scp(weakenScript,server);
+    }
 }

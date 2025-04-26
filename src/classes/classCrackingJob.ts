@@ -32,15 +32,12 @@ export class CrackingJob extends Job {
             if (!portOpen) {
                 const command = ns[tool.Command as keyof NS] as (host: string) => void;
                 command(server.hostName);
-                ns.tprint(`Used ${tool.Command} on ${server.hostName}`);
             }
         }
 
         if (availableTools.length >= portsRequired) {
             ns.nuke(server.hostName);
-            ns.tprint(`Nuked ${server.hostName}`);
         } else {
-            ns.tprint(`Not enough tools to nuke ${server.hostName} (need ${portsRequired}, have ${availableTools.length})`);
         }
     }
 }

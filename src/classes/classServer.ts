@@ -80,13 +80,16 @@ export class serverObject{
         return "targetServer";
     }
 
-    public isPrepped(){
-        return (this.hackDifficulty > this.minDifficulty && this.moneyAvailable < this.moneyMax);
+    get isPrepped():boolean{
+        return ((this.hackDifficulty - this.minDifficulty) === 0 && (this.moneyMax - this.moneyAvailable) === 0);
     }
-    public needsGrow(){
-        return (this.moneyAvailable < this.moneyMax);
+    get needsGrow():boolean{
+        return ((this.moneyMax - this.moneyAvailable) === 0);
     }
-    public needsWeaken(){
-        return (this.hackDifficulty > this.minDifficulty);
+    get needsWeaken():boolean{
+        return ((this.hackDifficulty - this.minDifficulty) === 0);
+    }
+    set(newData: serverObject): void {
+        Object.assign(this, newData);
     }
 }

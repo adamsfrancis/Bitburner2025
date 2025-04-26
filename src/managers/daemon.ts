@@ -178,7 +178,7 @@ async function sendMaxBatches(ns: NS, serverMap: Map<string, serverObject>) {
     }
 
     // 🧼 PREP TARGET if needed
-    if (!target.isPrepped()) {
+    if ((target.hackDifficulty-target.minDifficulty) > 0 || (target.moneyMax - target.moneyAvailable) > 0) {
         ns.tprint(`🛠️ Target ${targetHost} not prepped. Starting prep...`);
         await prepTargetServer(ns, target, serverMap);
         await updateServerMap(ns, serverMap); // Optional: ensure fresh data after prep
