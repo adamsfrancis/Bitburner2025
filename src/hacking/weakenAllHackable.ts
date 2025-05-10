@@ -39,8 +39,6 @@ export async function main(ns: NS) {
     }
     await ns.sleep(maxSleepTime);
 }
-    ns.exec("/hacking/batching/planBatch.js",homeServer)
-
 
 }
 
