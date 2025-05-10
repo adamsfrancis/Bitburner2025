@@ -1,54 +1,47 @@
-// scoutMan.js
 import { NS } from "@ns";
-import { serverObject } from "/classes/classServer";
 import { evolvingManFiles } from "/libraries/constants";
-
-
+import { lightweightServer } from "./interfaces/lightweightServer";
 
 /** @RAM 0.2 GB */
-export async function getServerStructure(ns: NS): Promise<Map<string, string | undefined>> {
-    /** Initial run variable setup, we want to start from "home", and follow the network from there.
-     *  Since home is the base level, it's parent will be null. Saving parents for possible backdoor
-     *  shennanigans later.
-     */
-
+export function getServerStructure(ns: NS): lightweightServer[] {
     const startingServer = "home";
-    const discoveredServers: Map<string, string | undefined> = new Map();
-    discoveredServers.set(startingServer, undefined);
+    const discoveredServers: lightweightServer[] = []; // Store as array instead of Map
+    
+    discoveredServers.push({
+        host: startingServer,
+        parent: undefined,
+        path: [startingServer],
+    });
 
-    // Function to recursively discover servers
-    function discoverServers(server: string) {
-        const adjacentServers = ns.scan(server);
-        for (const serverName of adjacentServers) {
-            if (!discoveredServers.has(serverName) && serverName !== "darkweb") {
-                discoveredServers.set(serverName, server);
-                discoverServers(serverName);
+    function discover(server: string) {
+        const adjacent = ns.scan(server);
+        const currentPath = discoveredServers.find(s => s.host === server)?.path ?? [];
+
+        for (const neighbor of adjacent) {
+            if (!discoveredServers.some(s => s.host === neighbor) && neighbor !== "darkweb") {
+                discoveredServers.push({
+                    host: neighbor,
+                    parent: server,
+                    path: [...currentPath, neighbor],
+                });
+                discover(neighbor);
             }
         }
     }
-    await discoverServers(startingServer);
+
+    discover(startingServer);
+
     return discoveredServers;
 }
 
 
-/** @RAM 2 GB */
-export async function getAllServerInfo(ns: NS, serverMap: Map<string, string | undefined>): Promise<serverObject[]> {
-    return Array.from(serverMap.entries()).map(([host, parent]) =>
-        new serverObject(ns, ns.getServer(host), parent)
-    );
-}
 
-export async function main(ns:NS):Promise<void> {
+export async function main(ns: NS): Promise<void> {
+    ns.ui.openTail;
     ns.disableLog("ALL");
 
+    const networkMap = getServerStructure(ns);
 
-
-    // Map this ascension's server map.
-    const initialServerMap = await getServerStructure(ns);
-
-    // Get all initial server information.
-    const filledServerMap = await getAllServerInfo(ns,initialServerMap);
-
-    await ns.write(evolvingManFiles.scoutingReport,JSON.stringify(filledServerMap),"w")
-
+    await ns.write(evolvingManFiles.scoutingReport, JSON.stringify(networkMap), "w");
 }
+

@@ -2,40 +2,68 @@ import { NS, CrimeType } from "@ns";
 
 export async function main(ns: NS) {
     const ownedAugs = () => ns.singularity.getOwnedAugmentations(true);
+    const crimes = Object.values(ns.enums.CrimeType) as CrimeType[];
+    const workTypes = ["hacking", "security", "field"] as const;
+    let lastTarget: string | null = null;
 
-    const getBestFactionTarget = () => {
-        const joinedFactions = ns.getPlayer().factions;
-        const targets: { faction: string, aug: string, repNeeded: number, currentRep: number }[] = [];
+    interface AugmentTarget {
+        faction: string;
+        aug: string;
+        repNeeded: number;
+        currentRep: number;
+        hackSkillMult: number;
+        hackExpMult: number;
+    }
+
+    function extractHackingPower(augName: string) {
+        const stats = ns.singularity.getAugmentationStats(augName);
+        return {
+            hackSkillMult: stats.hacking ?? 0,
+            hackExpMult: stats.hacking_exp ?? 0
+        };
+    }
+
+    function findBestAugTarget(): AugmentTarget | null {
+        const player = ns.getPlayer();
+        const joinedFactions = player.factions;
+        const augTargets: AugmentTarget[] = [];
 
         for (const faction of joinedFactions) {
-            const neededAugs = ns.singularity.getAugmentationsFromFaction(faction)
+            const augs = ns.singularity.getAugmentationsFromFaction(faction)
                 .filter(aug => !ownedAugs().includes(aug));
 
-            if (neededAugs.length === 0) continue;
+            for (const aug of augs) {
+                const { hackSkillMult, hackExpMult } = extractHackingPower(aug);
 
-            let topAug = "";
-            let maxRep = 0;
-            for (const aug of neededAugs) {
-                const rep = ns.singularity.getAugmentationRepReq(aug);
-                if (rep > maxRep) {
-                    maxRep = rep;
-                    topAug = aug;
+                if (hackSkillMult > 0 || hackExpMult > 0) { // Only care about hacking boosts
+                    const repNeeded = ns.singularity.getAugmentationRepReq(aug);
+                    const currentRep = ns.singularity.getFactionRep(faction);
+
+                    if (currentRep >= repNeeded) continue; // Already can buy it, no need to work
+
+
+                    augTargets.push({
+                        faction,
+                        aug,
+                        repNeeded,
+                        currentRep,
+                        hackSkillMult,
+                        hackExpMult
+                    });
                 }
-            }
-
-            const currentRep = ns.singularity.getFactionRep(faction);
-            if (currentRep < maxRep) {
-                targets.push({ faction, aug: topAug, repNeeded: maxRep, currentRep });
             }
         }
 
-        targets.sort((a, b) => a.repNeeded - b.repNeeded);
-        return targets[0]; // Target with lowest maxRep
-    };
+        if (augTargets.length === 0) return null;
 
-    const crimes = Object.values(ns.enums.CrimeType) as CrimeType[];
+        // Sort:
+        // 1. Ascending by repNeeded
+        augTargets.sort((a, b) => a.repNeeded - b.repNeeded);
 
-    const getBestCrime = (): CrimeType => {
+        return augTargets[0];
+    }
+
+    function getBestCrime(): CrimeType {
         let bestCrime: CrimeType = crimes[0];
         let bestRate = 0;
 
@@ -52,18 +80,15 @@ export async function main(ns: NS) {
         }
 
         return bestCrime;
-    };
-
-    const workTypes = ["hacking", "security", "field"] as const;
-    let lastTarget: string | null = null;
+    }
 
     while (true) {
-        const target = getBestFactionTarget();
+        const target = findBestAugTarget();
 
         if (target) {
-            if (lastTarget !== target.faction) {
+            if (lastTarget !== target.faction + target.aug) {
                 ns.tprint(`🎯 New faction target: ${target.faction} for ${target.aug} (${target.currentRep.toFixed(0)}/${target.repNeeded})`);
-                
+
                 let started = false;
                 for (const work of workTypes) {
                     if (ns.singularity.workForFaction(target.faction, work, false)) {
@@ -74,20 +99,20 @@ export async function main(ns: NS) {
                 }
 
                 if (!started) {
-                    ns.tprint(`❌ Failed to work for ${target.faction}`);
+                    ns.tprint(`❌ Failed to start working for ${target.faction}`);
                 }
 
-                lastTarget = target.faction;
+                lastTarget = target.faction + target.aug;
             }
         } else {
             const crime = getBestCrime();
             if (lastTarget !== crime) {
-                ns.tprint(`🔫 No faction work to do, committing ${crime} for money.`);
+                ns.tprint(`🔫 No faction work, committing ${crime}.`);
                 ns.singularity.commitCrime(crime, false);
                 lastTarget = crime;
             }
         }
 
-        await ns.sleep(10_000); // Check every 10 seconds
+        await ns.sleep(10_000);
     }
 }

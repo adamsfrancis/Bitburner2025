@@ -2,7 +2,7 @@ import { NS } from "@ns";
 export async function main(ns: NS) {
     let result, x, y;
     while (true) {
-        await ns.go.resetBoardState("Netburners", 5)
+        await ns.go.resetBoardState("Daedalus", 5)
         do {
             const board: string[] = ns.go.getBoardState();
             const validMoves = ns.go.analysis.getValidMoves();

@@ -1,7 +1,9 @@
 import { NS } from "@ns";
-import { serverConstants,filesToSCP } from "/libraries/constants";
+import { serverConstants } from "/libraries/constants";
+import { hackingScripts } from "/hacking/constants";
 
 export async function main(ns: NS) {
+    ns.disableLog("ALL")
     const COST_PER_GB = serverConstants.costPerGBServer;
     const MIN_RAM_GB = serverConstants.minGBPurchasedServer;
     const MAX_SPEND_PERCENT = serverConstants.maxPercentageToSpendPerUpgrade;
@@ -42,7 +44,7 @@ while(true){
             if (success) {
                 availableMoney -= upgradeCost;
                 server.ramMax = newRam;
-                ns.tprint(`Upgraded ${server.hostName} to ${newRam}GB.`)
+                ns.print(`Upgraded ${server.hostName} to ${newRam}GB.`)
             } else {
                 break;
             }
@@ -54,7 +56,7 @@ while(true){
 }
 }
 async function scpIfNeeded(ns:NS,server:string){
-    for(const file of filesToSCP){
+    for(const [,file] of Object.entries(hackingScripts)){
         if(!ns.fileExists(file,server)){
             await ns.scp(file,server,serverConstants.homeServer)
         }

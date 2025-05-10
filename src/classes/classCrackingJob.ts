@@ -1,15 +1,14 @@
-import { NS } from "@ns";
+import { NS, Server } from "@ns";
 import { Job } from "./classJob";
 import { hackingTools } from "/libraries/constants";
-import { serverObject } from "./classServer";
 
 export class CrackingJob extends Job {
-    constructor(ns: NS, server: serverObject) {
-        super("Crack target", server.hostName);
+    constructor(ns: NS, server: Server) {
+        super("Crack target", server.hostname);
         this.executeCrack(ns, server);
     }
 
-    private async executeCrack(ns: NS, server: serverObject) {
+    private async executeCrack(ns: NS, server: Server) {
         const programsAvailable = Object.values(hackingTools)
             .map(t => t.Program)
             .filter(p => ns.fileExists(p, "home"));
@@ -22,7 +21,7 @@ export class CrackingJob extends Job {
             ["sqlPortOpen", server.sqlPortOpen]
         ]);
 
-        const portsRequired = ns.getServerNumPortsRequired(server.hostName);
+        const portsRequired = ns.getServerNumPortsRequired(server.hostname);
         const availableTools = Object.values(hackingTools).filter(tool =>
             programsAvailable.includes(tool.Program)
         );
@@ -31,13 +30,13 @@ export class CrackingJob extends Job {
             const portOpen = portStatus.get(tool.portFlag) ?? false;
             if (!portOpen) {
                 const command = ns[tool.Command as keyof NS] as (host: string) => void;
-                command(server.hostName);
+                command(server.hostname);
             }
         }
 
         if (availableTools.length >= portsRequired) {
-            ns.nuke(server.hostName);
-        } else {
-        }
+          const didNuke =  ns.nuke(server.hostname);
+          if(didNuke){ns.exec("/managers/scripts.backdoor.js",server.hostname,1)}
+        } 
     }
 }

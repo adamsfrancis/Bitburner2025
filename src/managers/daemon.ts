@@ -456,7 +456,7 @@ export function scaleBatchThreads(
 function rehydrateServers(ns: NS, rawData: any[]): Map<string, serverObject> {
     const map = new Map<string, serverObject>();
     for (const s of rawData) {
-        const hydrated = new serverObject(ns, ns.getServer(s.hostName), s.parentServer);
+        const hydrated = new serverObject(ns, ns.getServer(s.hostName), s.parentServer,s.serverPath);
         map.set(s.hostName, hydrated);
     }
     return map;
@@ -466,7 +466,7 @@ export async function updateServerMap(ns: NS, serverMap: Map<string, serverObjec
     await ns.exec("/managers/mapMan.js", "home")
     for (const [host, serverObj] of serverMap) {
         const updatedInfo = ns.getServer(host);
-        const refreshed = new serverObject(ns, updatedInfo, serverObj.parentServer);
+        const refreshed = new serverObject(ns, updatedInfo, serverObj.parentServer,serverObj.serverPath);
         serverMap.set(host, refreshed);
     }
 }

@@ -8,7 +8,7 @@ export const serverConstants = {
   limitPurchasedServer: 25,
   serverGrowthRateBase: 1.03, // Unadjusted Growth rate
   serverGrowthRateMax: 1.0035, // Maximum possible growth rate (max rate accounting for server security)
-  serverFortifyAmount: 0.002, // Amount by which server's security increases when its hacked/grown
+  serverFortifyAmount: 0.002, // Amount by which server's security increases when its hacked, grow is 2x this number
   serverWeakenAmount: 0.05, // Amount by which server's security decreases when weakened
   costPerGBHome: 32000,
   costPerGBServer: 55000,
@@ -19,7 +19,8 @@ export const serverConstants = {
   ramCostGrow: 1.75,
   ramCostHack: 1.7,
   ramCostWeaken: 1.75,
-  hackAmountToSteal: 0.01
+  hackAmountToSteal: 0.20,
+  homeServer:"home"
 }
 
 export const hacknetConstants = {

@@ -2,79 +2,86 @@ import { NS } from "@ns";
 
 export async function main(ns: NS) {
     const factions = ns.getPlayer().factions;
-    const allAugments = {};
-  
+    const owned = new Set(ns.singularity.getOwnedAugmentations(true));
+    const allAugs: { aug: string, faction: string, price: number }[] = [];
+
     for (const faction of factions) {
-      allAugments[faction] = ns.singularity.getAugmentationsFromFaction(faction)
-        .filter(aug => {
-          const cost = ns.singularity.getAugmentationPrice(aug);
-          const repReq = ns.singularity.getAugmentationRepReq(aug);
-          return ns.getServerMoneyAvailable("home") >= cost && ns.singularity.getFactionRep(faction) >= repReq;
-        });
+        const factionAugs = ns.singularity.getAugmentationsFromFaction(faction);
+
+        for (const aug of factionAugs) {
+            if (owned.has(aug)) continue;
+            if (aug === "NeuroFlux Governor") continue; // Handle separately
+            const price = ns.singularity.getAugmentationPrice(aug);
+            const repReq = ns.singularity.getAugmentationRepReq(aug);
+            const factionRep = ns.singularity.getFactionRep(faction);
+
+            if (price <= ns.getServerMoneyAvailable("home") && factionRep >= repReq) {
+                allAugs.push({ aug, faction, price });
+            }
+        }
     }
-  
-    const availableAugments = Object.entries(allAugments)
-      .flatMap(([faction, augs]) => augs.map(aug => ({ faction, aug })))
-      .filter(({ aug }) => !ns.singularity.getOwnedAugmentations(true).includes(aug));
-  
-    const totalAvailable = availableAugments.length;
-    const money = ns.getServerMoneyAvailable("home");
-    const incomeRate = estimateIncomeRate(ns);
-    const favorReadyFactions = factions.filter(f => ns.singularity.getFactionFavor(f) >= 150);
-  
-    ns.tprint("\n=== INSTALLATION ANALYSIS ===");
-    ns.tprint(`Available augments to buy: ${totalAvailable}`);
-    ns.tprint(`Home money: ${ns.formatNumber(money)} | Income rate: ${ns.formatNumber(incomeRate)}/s`);
-    ns.tprint(`Factions with donations unlocked: ${favorReadyFactions.join(", ") || "None"}`);
-  
-    const upcomingFactions = checkUpcomingFactions(ns);
-  
-    if (upcomingFactions.length > 0) {
-      ns.tprint(`Potential major factions coming soon: ${upcomingFactions.join(", ")}`);
+
+    // Sort most expensive first
+    allAugs.sort((a, b) => b.price - a.price);
+
+    for (const { aug, faction } of allAugs) {
+        await buyWithPrereqs(ns, aug, faction, owned);
     }
-  
-    const recommendation = makeRecommendation(ns, totalAvailable, upcomingFactions, favorReadyFactions);
-  
-    ns.tprint(`\nRecommendation: ${recommendation}\n`);
-  }
-  
-  /** Estimate how much money you're making per second */
-  function estimateIncomeRate(ns: NS): number {
-    // Simple guess based on hacknet, hacking income, etc.
-    // (could get fancier later)
-    const hacknetProd = ns.getHacknetMultipliers().production;
-    return hacknetProd * 1e6; // Ballpark, adjust if needed
-  }
-  
-  /** Check for factions you are close to unlocking */
-  function checkUpcomingFactions(ns: NS): string[] {
-    const upcoming = [];
-  
-    // Example logic (expandable)
-    if (!ns.getPlayer().factions.includes("Daedalus") && ns.getPlayer().money > 1e9) {
-      upcoming.push("Daedalus");
+
+    // Buy NeuroFlux Governor as many times as possible
+    while (true) {
+        let boughtOne = false;
+        for (const faction of factions) {
+            const price = ns.singularity.getAugmentationPrice("NeuroFlux Governor");
+            const repReq = ns.singularity.getAugmentationRepReq("NeuroFlux Governor");
+            const factionRep = ns.singularity.getFactionRep(faction);
+
+            if (factionRep >= repReq && price <= ns.getServerMoneyAvailable("home")) {
+                const success = ns.singularity.purchaseAugmentation(faction, "NeuroFlux Governor");
+                if (success) {
+                    ns.tprint(`🧠 Purchased NeuroFlux Governor from ${faction}`);
+                    boughtOne = true;
+                    break;
+                }
+            }
+        }
+        if (!boughtOne) break;
     }
-    if (!ns.getPlayer().factions.includes("Illuminati") && ns.getPlayer().skills.hacking > 1500) {
-      upcoming.push("Illuminati");
+
+    ns.tprint("🏁 Finished purchasing all augments.");
+}
+
+async function buyWithPrereqs(ns: NS, aug: string, faction: string, owned: Set<string>) {
+    const prereqs = ns.singularity.getAugmentationPrereq(aug) || [];
+
+    for (const pre of prereqs) {
+        if (!owned.has(pre)) {
+            // Find which faction sells the pre-requisite
+            const availableFactions = ns.singularity.getAugmentationFactions(pre);
+            const factionToUse = availableFactions.find(f => ns.getPlayer().factions.includes(f));
+            if (!factionToUse) {
+                ns.tprint(`⚠️ Cannot buy prerequisite ${pre} for ${aug} — no faction access.`);
+                return;
+            }
+
+            await buyWithPrereqs(ns, pre, factionToUse, owned);
+        }
     }
-  
-    return upcoming;
-  }
-  
-  /** Core logic to decide whether to install */
-  function makeRecommendation(ns: NS, totalAvailable: number, upcomingFactions: string[], favorReadyFactions: string[]): string {
-    if (upcomingFactions.length > 0) {
-      return "Wait - major factions are close.";
+
+    // Check if we can afford it now
+    const price = ns.singularity.getAugmentationPrice(aug);
+    const repReq = ns.singularity.getAugmentationRepReq(aug);
+    const factionRep = ns.singularity.getFactionRep(faction);
+
+    if (price <= ns.getServerMoneyAvailable("home") && factionRep >= repReq) {
+        const success = ns.singularity.purchaseAugmentation(faction, aug);
+        if (success) {
+            ns.tprint(`✅ Purchased ${aug} from ${faction}`);
+            owned.add(aug); // Update owned set
+        } else {
+            ns.tprint(`❌ Failed to purchase ${aug} from ${faction}`);
+        }
+    } else {
+        ns.tprint(`❌ Cannot afford or insufficient rep for ${aug} from ${faction}`);
     }
-    if (totalAvailable >= 10) {
-      return "Install - you have a solid batch of augments.";
-    }
-    if (favorReadyFactions.length > 0) {
-      return "Consider donating to factions and buying more augments first.";
-    }
-    if (totalAvailable <= 3) {
-      return "Wait - not enough augments worth installing yet.";
-    }
-    return "Optional - up to you based on goals.";
-  }
-  
+}

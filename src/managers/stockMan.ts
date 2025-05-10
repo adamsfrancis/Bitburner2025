@@ -8,9 +8,10 @@ interface StockData {
     averagePrice: number;
     timeObserved: number;
     boughtShares: number;
-    boughtPrice: number;
+    totalSpent: number;  // Total money spent on buying shares (including commission fees)
     totalProfitLoss: number;
 }
+
 
 export async function main(ns: NS): Promise<void> {
     const TICK_INTERVAL = 6000;
@@ -33,7 +34,7 @@ export async function main(ns: NS): Promise<void> {
             averagePrice: 0,
             timeObserved: 0,
             boughtShares: 0,
-            boughtPrice: 0,
+            totalSpent: 0,
             totalProfitLoss: 0,
         });
     }
@@ -70,24 +71,29 @@ export async function main(ns: NS): Promise<void> {
 
                 if (finalShares > 0) {
                     ns.stock.buyStock(symbol, finalShares);
-                    data.boughtShares = finalShares;
-                    data.boughtPrice = price;
+                    const totalCost = price * finalShares + 200_000;  // Including commission fee
+                    data.boughtShares += finalShares;
+                    data.totalSpent += totalCost;
+                    data.averagePrice = data.totalSpent / data.boughtShares;  // Recalculate average price
                     status = `🟢 Bought ${finalShares}`;
                 }
             }
 
+
             // SELL
             if (sharesHeld > 0 && price >= sellThreshold) {
-                const expectedProfit = (price - data.boughtPrice) * sharesHeld - 200_000;
-                if (expectedProfit >= 1_000_000) {
+                const expectedProfit = (price - data.averagePrice) * sharesHeld - 200_000;  // Using average price
+                if (expectedProfit >= REQUIRED_PROFIT_MARGIN) {
                     ns.stock.sellStock(symbol, sharesHeld);
                     data.totalProfitLoss += expectedProfit;
                     data.boughtShares = 0;
+                    data.totalSpent = 0;  // Reset total spent after selling
                     status = `🔴 Sold ${sharesHeld}`;
                 } else {
                     status = `💤 Holding (${sharesHeld})`;
                 }
             }
+
 
             // Display line
             const profitDisplay = data.totalProfitLoss.toFixed(0).padStart(8, " ");
@@ -98,10 +104,25 @@ export async function main(ns: NS): Promise<void> {
 
         ns.clearLog();
         ns.print(`📊 Bitburner StockMan Dashboard`);
-        ns.print(`Tick: ${new Date().toLocaleTimeString()} | Total Profit/Loss: $${totalProfitLoss.toFixed(2)}`);
+        ns.print(`Tick: ${new Date().toLocaleTimeString()} | Total Profit/Loss: $${formatNumber(totalProfitLoss)}`);
         ns.print("-".repeat(100));
         lines.forEach(line => ns.print(line));
 
         await ns.sleep(TICK_INTERVAL);
+    }
+}
+function formatNumber(value: number): string {
+    const absValue = Math.abs(value);
+    
+    if (absValue >= 1e12) {
+        return (value / 1e12).toFixed(2) + "T"; // Trillion
+    } else if (absValue >= 1e9) {
+        return (value / 1e9).toFixed(2) + "B"; // Billion
+    } else if (absValue >= 1e6) {
+        return (value / 1e6).toFixed(2) + "M"; // Million
+    } else if (absValue >= 1e3) {
+        return (value / 1e3).toFixed(2) + "K"; // Thousand
+    } else {
+        return value.toFixed(2); // For values smaller than a thousand
     }
 }
